@@ -115,23 +115,16 @@ window.konfirmasiBerhenti = function() {
 let sedangCrash = false; // Penjaga agar dialog tidak muncul berkali-kali
 
 window.addEventListener('error', function(event) {
-    // Cari pesan eror di berbagai lapisan objek bawaan browser
-    let pesanEror = "";
-    if (event.message) pesanEror += event.message + " ";
-    if (event.error && event.error.message) pesanEror += event.error.message;
-    
-    // Konversi ke huruf kecil untuk memastikan tidak luput karena huruf kapital
-    pesanEror = pesanEror.toLowerCase();
-
-    // Deteksi spesifik untuk eror Leaflet Race Condition
-    if (pesanEror.includes('_leaflet_id') || pesanEror.includes('cannot use \'in\' operator')) {
-        console.warn("[Guard] Satpam Global menangkap eror kritis Leaflet!");
-        
-        // Panggil fungsi kotak dialog Anda
-        if (typeof picuLayarCrash === "function") {
-            picuLayarCrash("Sistem Peta mengalami kebuntuan akibat interaksi yang terlalu cepat.");
-        }
-    }
+ // Abaikan eror dari ekstensi browser
+  if (event.filename && !event.filename.includes(window.location.hostname) && window.location.hostname !== '') {
+      return false; 
+  }
+  
+  // FILTER SUPER KETAT: Hanya tangkap jika erornya tentang "_leaflet_id" (Uncaught TypeError)
+  let pesan = event.message ? event.message.toString() : "";
+  if (pesan.includes('_leaflet_id')) {
+      picuLayarCrash(pesan);
+  }
 });
 
 // Catatan: 'unhandledrejection' sengaja DIHAPUS agar eror fetch/gambar tidak memicu dialog ini.
