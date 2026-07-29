@@ -213,10 +213,19 @@ document.addEventListener('click', function(e) {
     }
     let record = Records[qid];
     
-    // 2. INJEKSI GAMBAR POPUP
+ // 2. INJEKSI GAMBAR POPUP
     if (record.imageFilename && !e.popup._hasImage) {
       let encodedFilename = encodeURIComponent(record.imageFilename);
+      
+      // Default: Ambil dari internet
       let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=250`;
+
+      // +++ KUNCI OFFLINE UNTUK POPUP PETA +++
+      // Jika sudah didownload offline, ganti URL internet dengan wujud Base64 dari RAM!
+      if (record.isOfflineReady && record.offlineImageBase64) {
+        imgUrl = record.offlineImageBase64;
+      }
+
       let imgHtml = `
             <div style="text-align:center; margin-top:17px;margin-bottom: 5px;">
               <img src="${imgUrl}" 
