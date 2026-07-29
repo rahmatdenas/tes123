@@ -1399,11 +1399,11 @@ window.addEventListener('keyup', function(e) {
 window.addEventListener('load', function() {
   // 1. Suntikkan HTML Lightbox ke dalam Body secara otomatis
   let lightboxHtml = `
-    <div id="eph-lightbox">
+<div id="eph-lightbox">
       <div class="lightbox-backdrop"></div>
-      <div class="lightbox-content" style="display: flex; flex-direction: column; align-items: center;">
-<img id="lightbox-img" src="" alt="Gambar Diperbesar" style="max-width: 100%; max-height: 80dvh; width: auto; height: auto; display: block;">
-<a id="lightbox-link" href="#" target="_blank" style="margin-top: 5px; color: #7b0d0c; text-decoration: none; font-size:12.5px;">Lihat di Wikimedia Commons</a>
+      <div class="lightbox-content">
+        <img id="lightbox-img" src="" alt="Gambar Diperbesar">
+        <a id="lightbox-link" href="#" target="_blank">Lihat di Wikimedia Commons</a>
       </div>
     </div>
   `;
