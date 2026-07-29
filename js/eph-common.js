@@ -1522,9 +1522,15 @@ async function jalankanDownloadOffline() {
     return;
   }
 
-  let qids = Object.keys(Records);
+  let qids = Object.keys(Records).filter(qid => !Records[qid].isOfflineReady);
+  
+  if (qids.length === 0) {
+    tampilkanDialog("Semua data saat ini sudah tersimpan di memori offline.", "alert", "Selesai");
+    return;
+  }
+
   let konfirmasi = await tampilkanDialog(
-    `Unduh data detail (Artikel, Atribut, dan Gambar) untuk <b>${qids.length}</b> objek?<br><br><span style="font-size:12px;color:#666;">Proses ini memakan waktu tergantung jumlah data. Mohon tidak menutup tab selama proses.</span>`,
+    `Unduh data detail (Artikel, Atribut, dan Gambar) untuk <b>${qids.length}</b> objek?<br><br><span style="font-size:12px;color:#666;">Versi Turbo: Proses akan memborong artikel Wikipedia dan menjalankan unduhan gambar di latar belakang.</span>`,
     'confirm',
     'Download Offline'
   );
@@ -1539,7 +1545,7 @@ async function jalankanDownloadOffline() {
   overlay.innerHTML = `
     <div style="background: #fff; color: #333; padding: 30px 40px; border-radius: 8px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-width: 80%; width: 300px;">
       <h3 style="margin-top: 0; color: #7b0d0c; margin-bottom:5px;">Mengunduh Data</h3>
-      <p style="margin-bottom: 20px; font-size: 13px; color: #666;">Menyimpan ke memori perangkat...</p>
+      <p id="offline-status-text" style="margin-bottom: 20px; font-size: 13px; color: #666;">Menarik Artikel Wikipedia...</p>
       <div id="offline-progress-text" style="font-size: 32px; font-weight: bold; margin-bottom: 5px; color:#333;">0%</div>
       <div id="offline-progress-count" style="font-size: 14px; color: #888;">0 / ${qids.length}</div>
     </div>
@@ -1548,78 +1554,105 @@ async function jalankanDownloadOffline() {
 
   let textPersen = document.getElementById('offline-progress-text');
   let textHitung = document.getElementById('offline-progress-count');
-  let suksesCount = 0;
+  let textStatus = document.getElementById('offline-status-text');
 
-  // 2. Fungsi Pembantu untuk Memaksa Browser Nge-Cache Gambar
-  const cacheImage = (url) => new Promise(res => {
-    if (!url) return res();
-    let img = new Image();
-    img.onload = res;
-    img.onerror = res;
-    img.src = url;
-  });
+  try {
+    // =========================================================
+    // FASE 1: BORONG WIKIPEDIA (35 Judul Sekali Tarik)
+    // =========================================================
+    let wikipediaTitles = qids
+      .filter(qid => Records[qid].articleTitle && !Records[qid].offlineWikiHtml)
+      .map(qid => Records[qid].articleTitle);
 
-  // 3. Tarik Data Secara Dicicil (Batching 5 per 5)
-  const BATCH_SIZE = 5; 
-  for (let i = 0; i < qids.length; i += BATCH_SIZE) {
-    let batch = qids.slice(i, i + BATCH_SIZE);
-    
-    let promises = batch.map(async (qid) => {
-      let record = Records[qid];
-      if (record.isOfflineReady) return; // Lewati jika sudah didownload sebelumnya
-
-      try {
-        // A. Panggil fungsi Wikidata di belakang layar (Tanpa menyentuh DOM)
-        if (typeof populateImportantEventsData === 'function') {
-          await populateImportantEventsData(qid).catch(() => {});
-        }
-        if (typeof populateHistoricalImagesData === 'function') {
-          await populateHistoricalImagesData(qid).catch(() => {});
-        }
-
-        // B. Paksa browser menyimpan gambar ke HTTP Cache
-        if (record.imageFilename) {
-          let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(record.imageFilename)}?width=500`;
-          await cacheImage(imgUrl);
-        }
-
-        // C. Tarik & Simpan Ringkasan Wikipedia
-        if (record.articleTitle && !record.offlineWikiHtml) {
-          let urlWiki = `https://id.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&redirects=true&titles=${encodeURIComponent(record.articleTitle)}&origin=*`;
-          let res = await fetch(urlWiki).catch(() => null);
-          
-          if (res && res.ok) {
-            let data = await res.json();
-            let rawExtract = Object.values(data.query.pages)[0].extract || '';
-            let kumpulanParagraf = rawExtract.match(/<p[^>]*>[\s\S]+?<\/p>/g);
-            let paragrafPilihan = kumpulanParagraf ? kumpulanParagraf.find(text => text.length > 50) : null;
-            
-            if (paragrafPilihan) {
-              paragrafPilihan = paragrafPilihan.replace(/^<p[^>]*>(\s|<br\s*\/?>| )*/i, '<p>');
-              paragrafPilihan = paragrafPilihan.replace(/<[^>]*>[^<]*(is deprecated|Lua error|Script error)[^<]*<\/[^>]*>/gi, '');
-              record.offlineWikiHtml = paragrafPilihan; // Simpan mentahannya di RAM!
+    // Potong jadi per 35 judul agar URL tidak kepanjangan
+    for (let i = 0; i < wikipediaTitles.length; i += 35) {
+      let batchTitles = wikipediaTitles.slice(i, i + 35);
+      let titlesStr = batchTitles.map(t => encodeURIComponent(t)).join('|');
+      let urlWiki = `https://id.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&redirects=true&titles=${titlesStr}&origin=*`;
+      
+      let res = await fetch(urlWiki).catch(() => null);
+      if (res && res.ok) {
+        let data = await res.json();
+        if (data.query && data.query.pages) {
+          Object.values(data.query.pages).forEach(page => {
+            if (page.title && page.extract) {
+              // Cari QID yang cocok dengan judul artikel
+              let matchedQid = qids.find(q => Records[q].articleTitle === page.title);
+              if (matchedQid) {
+                let rawExtract = page.extract;
+                let kumpulanParagraf = rawExtract.match(/<p[^>]*>[\s\S]+?<\/p>/g);
+                let paragrafPilihan = kumpulanParagraf ? kumpulanParagraf.find(text => text.length > 50) : null;
+                
+                if (paragrafPilihan) {
+                  paragrafPilihan = paragrafPilihan.replace(/^<p[^>]*>(\s|<br\s*\/?>| )*/i, '<p>');
+                  paragrafPilihan = paragrafPilihan.replace(/<[^>]*>[^<]*(is deprecated|Lua error|Script error)[^<]*<\/[^>]*>/gi, '');
+                  Records[matchedQid].offlineWikiHtml = paragrafPilihan;
+                }
+              }
             }
-          }
+          });
         }
-        record.isOfflineReady = true; // Tandai sukses
-      } catch (e) {
-        console.warn('Gagal unduh offline untuk ' + qid);
+      }
+    }
+
+    // =========================================================
+    // FASE 2: CACHE GAMBAR SECARA PARALEL (Non-Blocking)
+    // =========================================================
+    textStatus.innerText = "Mengamankan Gambar & Data Lanjutan...";
+    
+    // Kita "lempar" semua request gambar ke browser agar didownload di latar belakang
+    qids.forEach(qid => {
+      let rec = Records[qid];
+      if (rec.imageFilename) {
+        let img = new Image();
+        img.src = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(rec.imageFilename)}?width=500`;
       }
     });
 
-    await Promise.all(promises);
-    
-    // 4. Update UI Progress
-    suksesCount += batch.length;
-    let percent = Math.round((suksesCount / qids.length) * 100);
-    textPersen.innerText = `${percent}%`;
-    textHitung.innerText = `${suksesCount} / ${qids.length}`;
-    
-    // JEDA EMAS: Beri nafas 600ms tiap batch agar koneksi internet dan RAM tidak meledak
-    await new Promise(r => setTimeout(r, 600));
-  }
+    // =========================================================
+    // FASE 3: TARIK DATA WIKIDATA DENGAN BATCH YANG LEBIH BESAR
+    // =========================================================
+    const BATCH_SIZE = 12; // Diperbesar menjadi 12 per siklus
+    let suksesCount = 0;
 
-  // 5. Selesai
-  document.body.removeChild(overlay);
-  tampilkanDialog("Download offline selesai!<br>Seluruh informasi detail, artikel, dan gambar kini tersimpan di memori perangkat selama tab ini tidak dimuat ulang (refresh).", "alert", "Selesai");
+    for (let i = 0; i < qids.length; i += BATCH_SIZE) {
+      let batch = qids.slice(i, i + BATCH_SIZE);
+      
+      let promises = batch.map(async (qid) => {
+        try {
+          // Fungsi-fungsi ini dari JS Anda
+          if (typeof populateImportantEventsData === 'function') {
+            await populateImportantEventsData(qid).catch(() => {});
+          }
+          if (typeof populateHistoricalImagesData === 'function') {
+            await populateHistoricalImagesData(qid).catch(() => {});
+          }
+          Records[qid].isOfflineReady = true; 
+        } catch (e) {
+          console.warn('Gagal unduh parsial untuk ' + qid);
+        }
+      });
+
+      // Tunggu 12 item ini selesai diproses
+      await Promise.allSettled(promises);
+      
+      suksesCount += batch.length;
+      if (suksesCount > qids.length) suksesCount = qids.length;
+
+      let percent = Math.round((suksesCount / qids.length) * 100);
+      textPersen.innerText = `${percent}%`;
+      textHitung.innerText = `${suksesCount} / ${qids.length}`;
+      
+      // JEDA SANGAT SINGKAT (300ms) - Cukup untuk menghindari limit 5 koneksi/detik Wikidata
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    document.body.removeChild(overlay);
+    tampilkanDialog("Download offline Turbo selesai!<br>Data siap dibuka tanpa jeda pemuatan.", "alert", "Selesai");
+
+  } catch (error) {
+    document.body.removeChild(overlay);
+    tampilkanDialog("Terjadi kesalahan saat mengunduh sebagian data.", "alert");
+    console.error(error);
+  }
 }
