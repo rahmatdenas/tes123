@@ -738,8 +738,25 @@ if (logoBranding) {
   }, 300);
 }
 
-  let fragment = window.location.hash.replace('#', '');
+let fragment = window.location.hash.replace('#', '');
 
+  // +++ TAMBAHKAN BLOK INI UNTUK TOMBOL DOWNLOAD +++
+  if (fragment === 'download') {
+    // Kembalikan URL secara diam-diam agar tidak menetap di #download
+    isRevertingHash = true;
+    window.location.hash = (lastValidHash === 'landing' || lastValidHash === '') ? '' : lastValidHash;
+    
+    // Tutup menu 'Lainnya' jika terbuka
+    let subMenuAtas = document.getElementById('submenu-atas');
+    let btnMenuInduk = document.getElementById('btn-menu-induk');
+    if (subMenuAtas) subMenuAtas.style.display = 'none';
+    if (btnMenuInduk && btnMenuInduk.parentElement) btnMenuInduk.parentElement.classList.remove('selected', 'active');
+    
+    // Mulai proses
+    jalankanDownloadOffline();
+    return;
+  }
+  // ++++++++++++++++++++++++++++++++++++++++++++++++
   // Jangan paksa panel terbuka di mobile saat baru dimuat
   if (typeof window.setMobilePanelExpanded === 'function') {
     isAppInitialLoad = false; 
@@ -967,14 +984,18 @@ function displayRecordDetails(qid) {
       currentActiveShapeLayer = record.shapeLayer;
     }
 
+// KODE BARU: Cek apakah data sudah ditarik secara offline
     if (!record.panelElem) {
       generateRecordDetails(qid);
       
-      if (typeof populateImportantEventsData === 'function') {
-        populateImportantEventsData(qid);
-      }
-      if (typeof populateHistoricalImagesData === 'function') {
-        populateHistoricalImagesData(qid);
+      if (!record.isOfflineReady) {
+        // Mode Normal (Tarik saat diklik)
+        if (typeof populateImportantEventsData === 'function') populateImportantEventsData(qid);
+        if (typeof populateHistoricalImagesData === 'function') populateHistoricalImagesData(qid);
+      } else {
+        // Mode Offline (Langsung rakit HTML karena datanya sudah ada di memori)
+        if (typeof renderDynamicDataInPanel === 'function') renderDynamicDataInPanel(qid);
+        if (typeof renderHistoricalImagesInPanel === 'function') renderHistoricalImagesInPanel(qid);
       }
     }
     
@@ -1490,4 +1511,115 @@ function resetFormWilayah() {
     benuaInput.value = 'eropa';
     if (typeof filterNegaraByBenua === 'function') filterNegaraByBenua();
   }
+}
+
+// ========================================================
+// FITUR DOWNLOAD OFFLINE
+// ========================================================
+async function jalankanDownloadOffline() {
+  if (!PrimaryDataIsLoaded) {
+    tampilkanDialog("Silakan lakukan pencarian data terlebih dahulu sebelum mengunduh.", "alert");
+    return;
+  }
+
+  let qids = Object.keys(Records);
+  let konfirmasi = await tampilkanDialog(
+    `Unduh data detail (Artikel, Atribut, dan Gambar) untuk <b>${qids.length}</b> objek?<br><br><span style="font-size:12px;color:#666;">Proses ini memakan waktu tergantung jumlah data. Mohon tidak menutup tab selama proses.</span>`,
+    'confirm',
+    'Download Offline'
+  );
+
+  if (!konfirmasi) return;
+
+  // 1. Buat UI Progress Box
+  let overlay = document.createElement('div');
+  overlay.id = 'offline-progress-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;';
+  
+  overlay.innerHTML = `
+    <div style="background: #fff; color: #333; padding: 30px 40px; border-radius: 8px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-width: 80%; width: 300px;">
+      <h3 style="margin-top: 0; color: #7b0d0c; margin-bottom:5px;">Mengunduh Data</h3>
+      <p style="margin-bottom: 20px; font-size: 13px; color: #666;">Menyimpan ke memori perangkat...</p>
+      <div id="offline-progress-text" style="font-size: 32px; font-weight: bold; margin-bottom: 5px; color:#333;">0%</div>
+      <div id="offline-progress-count" style="font-size: 14px; color: #888;">0 / ${qids.length}</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  let textPersen = document.getElementById('offline-progress-text');
+  let textHitung = document.getElementById('offline-progress-count');
+  let suksesCount = 0;
+
+  // 2. Fungsi Pembantu untuk Memaksa Browser Nge-Cache Gambar
+  const cacheImage = (url) => new Promise(res => {
+    if (!url) return res();
+    let img = new Image();
+    img.onload = res;
+    img.onerror = res;
+    img.src = url;
+  });
+
+  // 3. Tarik Data Secara Dicicil (Batching 5 per 5)
+  const BATCH_SIZE = 5; 
+  for (let i = 0; i < qids.length; i += BATCH_SIZE) {
+    let batch = qids.slice(i, i + BATCH_SIZE);
+    
+    let promises = batch.map(async (qid) => {
+      let record = Records[qid];
+      if (record.isOfflineReady) return; // Lewati jika sudah didownload sebelumnya
+
+      try {
+        // A. Panggil fungsi Wikidata di belakang layar (Tanpa menyentuh DOM)
+        if (typeof populateImportantEventsData === 'function') {
+          await populateImportantEventsData(qid).catch(() => {});
+        }
+        if (typeof populateHistoricalImagesData === 'function') {
+          await populateHistoricalImagesData(qid).catch(() => {});
+        }
+
+        // B. Paksa browser menyimpan gambar ke HTTP Cache
+        if (record.imageFilename) {
+          let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(record.imageFilename)}?width=500`;
+          await cacheImage(imgUrl);
+        }
+
+        // C. Tarik & Simpan Ringkasan Wikipedia
+        if (record.articleTitle && !record.offlineWikiHtml) {
+          let urlWiki = `https://id.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&redirects=true&titles=${encodeURIComponent(record.articleTitle)}&origin=*`;
+          let res = await fetch(urlWiki).catch(() => null);
+          
+          if (res && res.ok) {
+            let data = await res.json();
+            let rawExtract = Object.values(data.query.pages)[0].extract || '';
+            let kumpulanParagraf = rawExtract.match(/<p[^>]*>[\s\S]+?<\/p>/g);
+            let paragrafPilihan = kumpulanParagraf ? kumpulanParagraf.find(text => text.length > 50) : null;
+            
+            if (paragrafPilihan) {
+              paragrafPilihan = paragrafPilihan.replace(/^<p[^>]*>(\s|<br\s*\/?>| )*/i, '<p>');
+              paragrafPilihan = paragrafPilihan.replace(/<[^>]*>[^<]*(is deprecated|Lua error|Script error)[^<]*<\/[^>]*>/gi, '');
+              record.offlineWikiHtml = paragrafPilihan; // Simpan mentahannya di RAM!
+            }
+          }
+        }
+        record.isOfflineReady = true; // Tandai sukses
+      } catch (e) {
+        console.warn('Gagal unduh offline untuk ' + qid);
+      }
+    });
+
+    await Promise.all(promises);
+    
+    // 4. Update UI Progress
+    suksesCount += batch.length;
+    let percent = Math.round((suksesCount / qids.length) * 100);
+    textPersen.innerText = `${percent}%`;
+    textHitung.innerText = `${suksesCount} / ${qids.length}`;
+    
+    // JEDA EMAS: Beri nafas 600ms tiap batch agar koneksi internet dan RAM tidak meledak
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  // 5. Selesai
+  document.body.removeChild(overlay);
+  tampilkanDialog("Download offline selesai!<br>Seluruh informasi detail, artikel, dan gambar kini tersimpan di memori perangkat selama tab ini tidak dimuat ulang (refresh).", "alert", "Selesai");
 }
