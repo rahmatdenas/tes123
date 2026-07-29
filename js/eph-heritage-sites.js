@@ -1136,7 +1136,7 @@ validRecords.forEach(record => {
 function generateRecordDetails(qid) {
   let record = Records[qid];
   let titleHtml = `<h1>${record.title}</h1>`;
-  let figureHtml = generateFigure(record.imageFilename, record.title);
+let figureHtml = generateFigure(record.imageFilename, record.title, [], record)
 
   if (record.imageFilename) {
     figureHtml = figureHtml.replace('<figure class="', '<figure class="gambar-utama ');
@@ -1264,23 +1264,28 @@ function generateRecordDetails(qid) {
     panelElem.classList.add('mode-tokoh');
   }
   
-  panelElem.innerHTML = titleHtml + figureHtml + articleHtml + designationsHtml + arsipHtml;
+panelElem.innerHTML = titleHtml + figureHtml + articleHtml + designationsHtml + arsipHtml;
   record.panelElem = panelElem;
 
-// KODE BARU: Cegat jika teks artikel sudah tersedia di offlineWikiHtml
-  if (record.isOfflineReady && record.offlineWikiHtml) {
-    let elem = panelElem.querySelector('.article');
-    elem.innerHTML = record.offlineWikiHtml +
-      '<p class="wikipedia-link">' +
-        `<a href="https://id.wikipedia.org/wiki/${encodeURIComponent(record.articleTitle)}" target="_blank">` +
-          '<img src="img/wikipedia_tiny_logo.png" alt="" />' +
-          '<span>Baca selengkapnya di Wikipedia</span>' +
-        '</a>' +
-      '</p>';
-    elem.classList.remove('loading');
+  // +++ KUNCI ARTIKEL OFFLINE +++
+  if (record.isOfflineReady) {
+    let artElem = panelElem.querySelector('.article');
+    if (record.offlineWikiHtml && artElem) {
+      artElem.innerHTML = record.offlineWikiHtml +
+        '<p class="wikipedia-link">' +
+          `<a href="https://id.wikipedia.org/wiki/${encodeURIComponent(record.articleTitle)}" target="_blank">` +
+            '<img src="img/wikipedia_tiny_logo.png" alt="" />' +
+            '<span>Baca selengkapnya di Wikipedia</span>' +
+          '</a>' +
+        '</p>';
+      artElem.classList.remove('loading');
+    } else if (artElem) {
+      artElem.innerHTML = '<p class="nodata">Ringkasan artikel belum ditarik saat online.</p>';
+      artElem.classList.remove('loading');
+    }
   } 
   else if (record.articleTitle) {
-    // Mode Normal: Tarik langsung dari internet
+    // Jika online, tarik langsung
     displayArticleExtract(record.articleTitle, panelElem.querySelector('.article'));
   }
 
