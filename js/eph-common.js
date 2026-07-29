@@ -1589,35 +1589,42 @@ async function jalankanDownloadOffline() {
           }
         }
 
-        // C. Tarik Metadata Lisensi Gambar -> Simpan ke RAM
-        if (record.imageFilename && !record.offlineCaptionHtml) {
-          let urlCap = `${COMMONS_API_URL}?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File:${encodeURIComponent(record.imageFilename)}&origin=*`;
+// C & D GABUNGAN: Tarik Metadata Lisensi DAN Gambar (Base64) Lewat 1 Pintu API
+        if (record.imageFilename && (!record.offlineCaptionHtml || !record.offlineImageBase64)) {
+          // KUNCI PERBAIKAN: Tambahkan prop 'url' dan 'iiurlwidth=500' untuk mendapatkan URL asli gambar (thumburl)
+          let urlCap = `${COMMONS_API_URL}?action=query&format=json&prop=imageinfo&iiprop=extmetadata|url&iiurlwidth=500&titles=File:${encodeURIComponent(record.imageFilename)}&origin=*`;
+          
           let res = await fetch(urlCap).catch(() => null);
           if (res && res.ok) {
             let data = await res.json();
             let page = Object.values(data.query.pages)[0];
-            if (page && page.imageinfo && page.imageinfo[0].extmetadata) {
-              let meta = page.imageinfo[0].extmetadata;
-              let artist = meta.Artist ? meta.Artist.value.replace(/<(?!\/?a ?)[^>]+>/g, '').replace(/Unknown authorUnknown author|UnknownUnknown/gi, 'Tak diketahui').replace(/AnonymousUnknown author/gi, 'Anonim') : '';
-              let license = (meta.AttributionRequired && meta.AttributionRequired.value === 'true') ? meta.LicenseShortName.value.replace(/ /g, ' ').replace(/-/g, '‑') : '';
-              if (license) license = meta.LicenseUrl ? ` <a href="${meta.LicenseUrl.value}" target="_blank">[${license}]</a>` : ` [${license}]`;
-              record.offlineCaptionHtml = artist + license;
-            }
-          }
-        }
+            
+            if (page && page.imageinfo && page.imageinfo[0]) {
+              let info = page.imageinfo[0];
 
-        // D. KUNCI PERBAIKAN GAMBAR: Ubah Gambar ke Teks Base64 -> Simpan ke RAM
-        if (record.imageFilename && !record.offlineImageBase64) {
-          let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(record.imageFilename)}?width=500`;
-          let res = await fetch(imgUrl).catch(() => null);
-          if (res && res.ok) {
-            let blob = await res.blob();
-            // Ubah wujud file biner menjadi kode teks (Base64 URL)
-            record.offlineImageBase64 = await new Promise((resolve) => {
-              let reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result);
-              reader.readAsDataURL(blob);
-            });
+              // 1. Simpan Teks Lisensi ke RAM
+              if (info.extmetadata) {
+                let meta = info.extmetadata;
+                let artist = meta.Artist ? meta.Artist.value.replace(/<(?!\/?a ?)[^>]+>/g, '').replace(/Unknown authorUnknown author|UnknownUnknown/gi, 'Tak diketahui').replace(/AnonymousUnknown author/gi, 'Anonim') : '';
+                let license = (meta.AttributionRequired && meta.AttributionRequired.value === 'true') ? meta.LicenseShortName.value.replace(/ /g, ' ').replace(/-/g, '‑') : '';
+                if (license) license = meta.LicenseUrl ? ` <a href="${meta.LicenseUrl.value}" target="_blank">[${license}]</a>` : ` [${license}]`;
+                record.offlineCaptionHtml = artist + license;
+              }
+
+              // 2. Tarik Gambar dari URL Asli (thumburl) dan Ubah ke Base64 RAM
+              if (info.thumburl && !record.offlineImageBase64) {
+                // Fetch ke upload.wikimedia.org ini dijamin lolos blokir CORS!
+                let imgRes = await fetch(info.thumburl).catch(() => null);
+                if (imgRes && imgRes.ok) {
+                  let blob = await imgRes.blob();
+                  record.offlineImageBase64 = await new Promise((resolve) => {
+                    let reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob); // Sulap jadi teks Base64
+                  });
+                }
+              }
+            }
           }
         }
 
