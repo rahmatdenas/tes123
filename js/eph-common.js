@@ -1030,24 +1030,34 @@ let stuckCaptions = record.panelElem.querySelectorAll('figcaption');
   }
 }
 
-function generateFigure(filename, title = "Situs", classNames = []) {
+function generateFigure(filename, title = "Situs", classNames = [], record = null) {
   if (filename) {
     let uniqueId = 'caption-' + Math.random().toString(36).substr(2, 9);
     let encodedFilename = encodeURIComponent(filename);
     
-    // KUNCI: Cukup panggil fungsi pembantunya di sini!
-    tarikMetadataCaption(encodedFilename, uniqueId, null);
+    // Default mode (Internet)
+    let imgSrc = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=500`;
+    let captionHtml = '(Memuat…)';
+
+    // +++ KUNCI OFFLINE: Jika data sudah di-download, gunakan data dari RAM! +++
+    if (record && record.isOfflineReady) {
+      if (record.offlineImageBase64) imgSrc = record.offlineImageBase64;
+      if (record.offlineCaptionHtml) captionHtml = record.offlineCaptionHtml;
+    } else {
+      // Jika online, baru panggil API
+      tarikMetadataCaption(encodedFilename, uniqueId, null);
+    }
 
     return (
       `<figure class="${classNames.join(' ')}">` +
         `<a href="${COMMONS_WIKI_URL_PREF}File:${encodedFilename}" target="_blank">` +
-          `<img class="loading" src="${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=500" alt="" onload="this.className=''">` +
+          `<img class="${(record && record.isOfflineReady) ? '' : 'loading'}" src="${imgSrc}" alt="" onload="this.className=''">` +
         '</a>' +
-        `<figcaption id="${uniqueId}" data-filename="${encodedFilename}">(Memuat…)</figcaption>` +
+        `<figcaption id="${uniqueId}" data-filename="${encodedFilename}">${captionHtml}</figcaption>` +
       '</figure>'
     );
   } else {
-    // KODE JIKA TIDAK ADA GAMBAR (Biarkan tetap sama)
+    // KODE JIKA TIDAK ADA GAMBAR
     let namaAmanURL = encodeURIComponent(title);
     let gFormFotoUrl = `https://docs.google.com/forms/d/e/1FAIpQLSd7_u-7yCwDtXIkDO--bILry6mWGoRCnnfSumL_PEjfle0aLg/viewform?usp=pp_url&entry.2138396049=${namaAmanURL}`;
     return `<figure class="${classNames.join(' ')} nodata">Belum ada foto. <a href="${gFormFotoUrl}" target="_blank" rel="noopener noreferrer" style="border:none;" class="sunting-linktambah">Tambahkan!</a></figure>`;
