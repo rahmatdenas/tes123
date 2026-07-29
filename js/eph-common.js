@@ -205,7 +205,7 @@ document.addEventListener('click', function(e) {
   });
   // =========================================================
   
-  Map.on('popupopen', function(e) { 
+Map.on('popupopen', function(e) { 
     e.popup._sudahDiupdate = false;
     let qid = e.popup._qid;
     if (window.location.hash !== '#' + qid) {
@@ -213,17 +213,30 @@ document.addEventListener('click', function(e) {
     }
     let record = Records[qid];
     
- // 2. INJEKSI GAMBAR POPUP
-    if (record.imageFilename && !e.popup._hasImage) {
-      let encodedFilename = encodeURIComponent(record.imageFilename);
-      
-      // Default: Ambil dari internet
-      let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=250`;
+    // ========================================================
+    // KUNCI PERBAIKAN POPUP: Logika "Naik Kelas" ke Offline
+    // ========================================================
+    let butuhUpdateHTML = false;
+    
+    if (record.imageFilename) {
+      if (!e.popup._hasImage) {
+        butuhUpdateHTML = true; // Belum pernah dirender sama sekali
+      } else if (record.isOfflineReady && !e.popup._isOfflineMode) {
+        butuhUpdateHTML = true; // Sudah dirender internet, tapi butuh upgrade ke versi RAM!
+      }
+    }
 
-      // +++ KUNCI OFFLINE UNTUK POPUP PETA +++
-      // Jika sudah didownload offline, ganti URL internet dengan wujud Base64 dari RAM!
+    // Eksekusi perakitan ulang HTML Popup
+    if (butuhUpdateHTML) {
+      let encodedFilename = encodeURIComponent(record.imageFilename);
+      let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=250`;
+      
+      e.popup._isOfflineMode = false;
+
+      // Jika data RAM tersedia, tembakkan wujud aslinya!
       if (record.isOfflineReady && record.offlineImageBase64) {
         imgUrl = record.offlineImageBase64;
+        e.popup._isOfflineMode = true; // Tandai bahwa popup ini sudah kebal offline
       }
 
       let imgHtml = `
@@ -238,6 +251,7 @@ document.addEventListener('click', function(e) {
       e.popup.setContent(imgHtml + `${record.title}`);      
       e.popup._hasImage = true; 
     }
+    // ========================================================
   });
   processHashChange();
   setTimeout(() => {
