@@ -976,11 +976,9 @@ position: absolute;
 .lightbox-content a {
   display: block;
   outline: none;
-  margin-top: 10px;       /* Jarak antara gambar dan teks */
-  margin-bottom: 2px;     /* Sedikit penyeimbang di bawah agar proporsional */
-  color: #7b0d0c;
+  color: #888;
   text-decoration: none;
-  font-size: 12.5px;
+  font-size: 10px;
   font-family: 'Open Sans', sans-serif;
   flex-shrink: 0;         /* KUNCI SAFARI: Mencegah teks terdistorsi/memelar */
   line-height: 1;         /* Menjaga tinggi teks tetap konsisten */
@@ -993,6 +991,7 @@ position: absolute;
   max-height: calc(90vh - 55px); 
   object-fit: contain;
   display: block;
+  margin-bottom: 10px; 
   min-height: 0;          /* KUNCI SAFARI: Membantu flexbox agar gambar bisa mengecil */
 }
 .leaflet-popup-content img {
