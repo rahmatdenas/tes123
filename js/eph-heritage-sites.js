@@ -1267,7 +1267,23 @@ function generateRecordDetails(qid) {
   panelElem.innerHTML = titleHtml + figureHtml + articleHtml + designationsHtml + arsipHtml;
   record.panelElem = panelElem;
 
-  if (record.articleTitle) displayArticleExtract(record.articleTitle, panelElem.querySelector('.article'));
+// KODE BARU: Cegat jika teks artikel sudah tersedia di offlineWikiHtml
+  if (record.isOfflineReady && record.offlineWikiHtml) {
+    let elem = panelElem.querySelector('.article');
+    elem.innerHTML = record.offlineWikiHtml +
+      '<p class="wikipedia-link">' +
+        `<a href="https://id.wikipedia.org/wiki/${encodeURIComponent(record.articleTitle)}" target="_blank">` +
+          '<img src="img/wikipedia_tiny_logo.png" alt="" />' +
+          '<span>Baca selengkapnya di Wikipedia</span>' +
+        '</a>' +
+      '</p>';
+    elem.classList.remove('loading');
+  } 
+  else if (record.articleTitle) {
+    // Mode Normal: Tarik langsung dari internet
+    displayArticleExtract(record.articleTitle, panelElem.querySelector('.article'));
+  }
+
   queryOsm(qid);
 }
 
