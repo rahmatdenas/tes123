@@ -1622,15 +1622,15 @@ async function jalankanDownloadOffline() {
               }
 
               // 2. Tarik Gambar dari URL Asli (thumburl) dan Ubah ke Base64 RAM
-              if (info.thumburl && !record.offlineImageBase64) {
-                // Fetch ke upload.wikimedia.org ini dijamin lolos blokir CORS!
-                let imgRes = await fetch(info.thumburl).catch(() => null);
+if (info.thumburl && !record.offlineImageBase64) {
+                // Tambahkan mode: 'cors' agar browser diizinkan membaca wujud file-nya
+                let imgRes = await fetch(info.thumburl, { mode: 'cors' }).catch(() => null);
                 if (imgRes && imgRes.ok) {
                   let blob = await imgRes.blob();
                   record.offlineImageBase64 = await new Promise((resolve) => {
                     let reader = new FileReader();
                     reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(blob); // Sulap jadi teks Base64
+                    reader.readAsDataURL(blob); 
                   });
                 }
               }
