@@ -1514,10 +1514,7 @@ function resetFormWilayah() {
 }
 
 // ========================================================
-// FITUR DOWNLOAD OFFLINE
-// ========================================================
-// ========================================================
-// FITUR DOWNLOAD OFFLINE (VERSI HYBRID - STABIL & AMAN)
+// FITUR DOWNLOAD OFFLINE (VERSI INJEKSI RAM BASE64)
 // ========================================================
 async function jalankanDownloadOffline() {
   if (!PrimaryDataIsLoaded) {
@@ -1528,12 +1525,12 @@ async function jalankanDownloadOffline() {
   let qids = Object.keys(Records).filter(qid => !Records[qid].isOfflineReady);
   
   if (qids.length === 0) {
-    tampilkanDialog("Semua data saat ini sudah tersimpan di memori offline.", "alert", "Selesai");
+    tampilkanDialog("Semua data saat ini sudah tersimpan di memori.", "alert", "Selesai");
     return;
   }
 
   let konfirmasi = await tampilkanDialog(
-    `Unduh data detail (Artikel, Atribut, dan Gambar) untuk <b>${qids.length}</b> objek?<br><br><span style="font-size:12px;color:#666;">Proses ini memakan waktu tergantung jumlah data. Mohon tidak menutup tab selama proses.</span>`,
+    `Unduh data detail (Artikel, Lisensi, dan Gambar) untuk <b>${qids.length}</b> objek?<br><br><span style="font-size:12px;color:#666;">Data akan ditanam langsung ke dalam memori aplikasi agar kebal dari blokir offline.</span>`,
     'confirm',
     'Download Offline'
   );
@@ -1548,7 +1545,7 @@ async function jalankanDownloadOffline() {
   overlay.innerHTML = `
     <div style="background: #fff; color: #333; padding: 30px 40px; border-radius: 8px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); max-width: 80%; width: 300px;">
       <h3 style="margin-top: 0; color: #7b0d0c; margin-bottom:5px;">Mengunduh Data</h3>
-      <p id="offline-status-text" style="margin-bottom: 20px; font-size: 13px; color: #666;">Menyimpan ke memori perangkat...</p>
+      <p id="offline-status-text" style="margin-bottom: 20px; font-size: 13px; color: #666;">Menyuntikkan ke memori RAM...</p>
       <div id="offline-progress-text" style="font-size: 32px; font-weight: bold; margin-bottom: 5px; color:#333;">0%</div>
       <div id="offline-progress-count" style="font-size: 14px; color: #888;">0 / ${qids.length}</div>
     </div>
@@ -1558,18 +1555,7 @@ async function jalankanDownloadOffline() {
   let textPersen = document.getElementById('offline-progress-text');
   let textHitung = document.getElementById('offline-progress-count');
 
-  // KUNCI PERBAIKAN GAMBAR: Gunakan fetch dengan no-cors dan force-cache
-  // Ini memaksa browser melewati 302 Redirect dan menyimpannya secara fisik di cache!
-  const forceCacheImage = async (url) => {
-    if (!url) return;
-    try {
-      await fetch(url, { mode: 'no-cors', cache: 'force-cache' });
-    } catch (e) {
-      // Abaikan jika ada satu gambar gagal, agar proses tidak berhenti total
-    }
-  };
-
-  const BATCH_SIZE = 6; // Angka ideal: tidak terlalu lambat, tidak diblokir API
+  const BATCH_SIZE = 5; // Kita cicil 5 per 5 agar RAM HP tidak sesak nafas
   let suksesCount = 0;
 
   for (let i = 0; i < qids.length; i += BATCH_SIZE) {
@@ -1580,51 +1566,68 @@ async function jalankanDownloadOffline() {
       if (record.isOfflineReady) return;
 
       try {
-        // A. Tarik Metadata Wikidata
-        if (typeof populateImportantEventsData === 'function') {
-          await populateImportantEventsData(qid).catch(() => {});
-        }
-        if (typeof populateHistoricalImagesData === 'function') {
-          await populateHistoricalImagesData(qid).catch(() => {});
-        }
+        // A. Tarik Data SPARQL Detail (Pembangunan, Foto Arsip)
+        if (typeof populateImportantEventsData === 'function') await populateImportantEventsData(qid).catch(() => {});
+        if (typeof populateHistoricalImagesData === 'function') await populateHistoricalImagesData(qid).catch(() => {});
 
-        // B. Tarik Gambar secara Paksa ke Cache
-        if (record.imageFilename) {
-          let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(record.imageFilename)}?width=500`;
-          await forceCacheImage(imgUrl);
-        }
-
-        // C. Tarik Wikipedia SATU PER SATU (Terbukti paling handal!)
+        // B. Tarik Teks Artikel Wikipedia -> Simpan ke RAM
         if (record.articleTitle && !record.offlineWikiHtml) {
           let urlWiki = `https://id.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&redirects=true&titles=${encodeURIComponent(record.articleTitle)}&origin=*`;
           let res = await fetch(urlWiki).catch(() => null);
-          
           if (res && res.ok) {
             let data = await res.json();
-            if (data.query && data.query.pages) {
-              let page = Object.values(data.query.pages)[0];
-              if (page && page.extract) {
-                let rawExtract = page.extract;
-                let kumpulanParagraf = rawExtract.match(/<p[^>]*>[\s\S]+?<\/p>/g);
-                let paragrafPilihan = kumpulanParagraf ? kumpulanParagraf.find(text => text.length > 50) : null;
-                
-                if (paragrafPilihan) {
-                  paragrafPilihan = paragrafPilihan.replace(/^<p[^>]*>(\s|<br\s*\/?>| )*/i, '<p>');
-                  paragrafPilihan = paragrafPilihan.replace(/<[^>]*>[^<]*(is deprecated|Lua error|Script error)[^<]*<\/[^>]*>/gi, '');
-                  record.offlineWikiHtml = paragrafPilihan;
-                }
+            let page = Object.values(data.query.pages)[0];
+            if (page && page.extract) {
+              let text = page.extract;
+              let pMatch = text.match(/<p[^>]*>[\s\S]+?<\/p>/g);
+              let p = pMatch ? pMatch.find(t => t.length > 50) : null;
+              if (p) {
+                p = p.replace(/^<p[^>]*>(\s|<br\s*\/?>| )*/i, '<p>');
+                record.offlineWikiHtml = p.replace(/<[^>]*>[^<]*(is deprecated|Lua error|Script error)[^<]*<\/[^>]*>/gi, '');
               }
             }
           }
         }
-        
+
+        // C. Tarik Metadata Lisensi Gambar -> Simpan ke RAM
+        if (record.imageFilename && !record.offlineCaptionHtml) {
+          let urlCap = `${COMMONS_API_URL}?action=query&format=json&prop=imageinfo&iiprop=extmetadata&titles=File:${encodeURIComponent(record.imageFilename)}&origin=*`;
+          let res = await fetch(urlCap).catch(() => null);
+          if (res && res.ok) {
+            let data = await res.json();
+            let page = Object.values(data.query.pages)[0];
+            if (page && page.imageinfo && page.imageinfo[0].extmetadata) {
+              let meta = page.imageinfo[0].extmetadata;
+              let artist = meta.Artist ? meta.Artist.value.replace(/<(?!\/?a ?)[^>]+>/g, '').replace(/Unknown authorUnknown author|UnknownUnknown/gi, 'Tak diketahui').replace(/AnonymousUnknown author/gi, 'Anonim') : '';
+              let license = (meta.AttributionRequired && meta.AttributionRequired.value === 'true') ? meta.LicenseShortName.value.replace(/ /g, ' ').replace(/-/g, '‑') : '';
+              if (license) license = meta.LicenseUrl ? ` <a href="${meta.LicenseUrl.value}" target="_blank">[${license}]</a>` : ` [${license}]`;
+              record.offlineCaptionHtml = artist + license;
+            }
+          }
+        }
+
+        // D. KUNCI PERBAIKAN GAMBAR: Ubah Gambar ke Teks Base64 -> Simpan ke RAM
+        if (record.imageFilename && !record.offlineImageBase64) {
+          let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodeURIComponent(record.imageFilename)}?width=500`;
+          let res = await fetch(imgUrl).catch(() => null);
+          if (res && res.ok) {
+            let blob = await res.blob();
+            // Ubah wujud file biner menjadi kode teks (Base64 URL)
+            record.offlineImageBase64 = await new Promise((resolve) => {
+              let reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result);
+              reader.readAsDataURL(blob);
+            });
+          }
+        }
+
         record.isOfflineReady = true;
       } catch (e) {
-        console.warn('Gagal sebagian saat unduh offline: ' + qid);
+        console.warn('Gagal memproses QID: ' + qid);
       }
     });
 
-    // Tunggu kloter ini selesai sebelum lanjut
+    // Tunggu kloter ini selesai
     await Promise.allSettled(promises);
     
     suksesCount += batch.length;
@@ -1634,10 +1637,10 @@ async function jalankanDownloadOffline() {
     textPersen.innerText = `${percent}%`;
     textHitung.innerText = `${suksesCount} / ${qids.length}`;
     
-    // Jeda Nafas: 400ms. Mencegah error 429 Too Many Requests dari Wikidata
+    // Jeda Nafas 400ms agar server tidak marah
     await new Promise(r => setTimeout(r, 400));
   }
 
   document.body.removeChild(overlay);
-  tampilkanDialog("Download offline selesai!<br>Data siap dibuka tanpa koneksi internet.", "alert", "Selesai");
+  tampilkanDialog("Download offline berhasil disuntikkan ke memori!<br>Semua foto, lisensi, dan artikel kini bisa dibuka mulus tanpa sinyal internet.", "alert", "Selesai");
 }
