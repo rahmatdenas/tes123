@@ -407,20 +407,15 @@ async function populateImageAndWikipediaData() {
       
       // +++ KODE INJEKSI POPUP REAL-TIME +++
       // Jika pengguna sedang membuka popup marker ini saat gambarnya baru saja tiba
-if (record.popup && record.popup.isOpen() && !record.popup._hasImage) {
+      if (record.popup && record.popup.isOpen() && !record.popup._hasImage) {
         let encodedFilename = encodeURIComponent(record.imageFilename);
         let imgUrl = `${COMMONS_WIKI_URL_PREF}Special:FilePath/${encodedFilename}?width=250`;
-        
-        // Membungkus gambar DAN teks dalam satu Flexbox yang terpusat sempurna
         let imgHtml = `
-          <div style="display: flex; flex-direction: column; align-items: center; width: 100%; margin-top: 15px;">
-            <img src="${imgUrl}" draggable="false" style="width: 100%; min-width: 90px; height: 130px; object-fit: cover; border-radius: 4px;" onload="let p = Records['${cleanQid}'].popup; if (p) p.update();">
-            <span style="text-align: center; margin-top: 8px; line-height: 1.2;">${record.title}</span>
+          <div style="text-align:center; margin-top:17px;margin-bottom: 5px;">
+            <img src="${imgUrl}" draggable="false" style="width:100%; min-width:90px; height:130px; object-fit:cover; border-radius:4px;" onload="let p = Records['${cleanQid}'].popup; if (p) p.update();">
           </div>
         `;
-        
-        // Hapus tambahan + record.title di sini karena sudah masuk ke dalam imgHtml
-        record.popup.setContent(imgHtml);
+        record.popup.setContent(imgHtml + `${record.title}`);
         record.popup._hasImage = true;
       }
       // ++++++++++++++++++++++++++++++++++++
